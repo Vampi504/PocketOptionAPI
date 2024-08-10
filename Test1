@@ -1,0 +1,59 @@
+import websockets
+import anyio
+from rich.pretty import pprint as print
+import json
+from pocketoptionapi.constants import REGION
+
+# Your session information
+SESSION = r'42["auth",{"session":"a:4:{s:10:\"session_id\";s:32:\"a1dc009a7f1f0c8267d940d0a036156f\";s:10:\"ip_address\";s:12:\"190.162.4.33\";s:10:\"user_agent\";s:120:\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 OP\";s:13:\"last_activity\";i:1709914958;}793884e7bccc89ec798c06ef1279fcf2","isDemo":0,"uid":27658142,"platform":1}]'
+
+async def websocket_client(url, pro):
+    for region in REGION.get_regions(REGION):
+        print(f"Trying {region}...")
+        try:
+            async with websockets.connect(
+                url,
+                extra_headers={
+                    "Origin": "https://po.trade/"
+                },
+            ) as websocket:
+                async for message in websocket:
+                    await pro(message, websocket, url)
+        except KeyboardInterrupt:
+            print("Interrupted by user.")
+            break
+        except Exception as e:
+            print(f"Error: {e}")
+            print("Connection lost... reconnecting")
+            await anyio.sleep(5)
+    return True
+
+async def pro(message, websocket, url):
+    # Handle byte data
+    if isinstance(message, bytes):
+        # Print the first 100 bytes to avoid spam
+        print(str(message)[:100])
+        return
+    else:
+        print(message)
+
+    # Process messages
+    if message.startswith('0{"sid":"'):
+        print(f"{url.split('/')[2]} got 0 sid, sending 40")
+        await websocket.send("40")
+    elif message == "2":
+        # Ping-pong mechanism
+        print(f"{url.split('/')[2]} got 2, sending 3")
+        await websocket.send("3")
+
+    if message.startswith('40{"sid":"'):
+        print(f"{url.split('/')[2]} got 40 sid, sending session")
+        await websocket.send(SESSION)
+        print("Message sent! We are logged in!")
+
+async def main():
+    url = "wss://api-us-south.po.market/socket.io/?EIO=4&transport=websocket"  # Update URL as needed
+    await websocket_client(url, pro)
+
+if __name__ == "__main__":
+    anyio.run(main())
